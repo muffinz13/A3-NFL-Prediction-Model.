@@ -28,8 +28,6 @@ jobs:
           pip install "pandas>=2.2,<3" "pyarrow>=17,<24" requests
           pip install "scikit-learn>=1.5,<2" numpy
 
-      # DOWNLOAD HISTORICAL NFL DATA
-
       - name: Download NFL play-by-play data
         run: |
           mkdir -p data
@@ -52,8 +50,6 @@ jobs:
               )
           PY
 
-      # BUILD PLAYER AND DEFENSIVE FEATURES
-
       - name: Build A3 defensive matchup features
         run: python scripts/build_features.py
 
@@ -69,12 +65,8 @@ jobs:
       - name: Build defensive vulnerability profiles
         run: python scripts/build_vulnerability_features.py
 
-      # PHASE 4.7A — PREGAME PLAYER POOL
-
       - name: Build Phase 4.7A pregame player pool
         run: python scripts/build_pregame_player_pool.py
-
-      # EXISTING A3 TRAINING AND VALIDATION
 
       - name: Train and backtest A3 prediction models
         run: python scripts/train_a3.py
@@ -91,12 +83,11 @@ jobs:
       - name: Validate Phase 4.6 feature selection
         run: python scripts/validate_feature_selection.py
 
-      # PHASE 4.7B — OPPORTUNITY FORECASTING
-
       - name: Validate Phase 4.7B opportunity predictions
         run: python scripts/validate_opportunity_model.py
 
-      # VERIFY ALL GENERATED FILES
+      - name: Validate Phase 4.7C matchup breakouts
+        run: python scripts/validate_matchup_breakouts.py
 
       - name: Verify A3 outputs
         run: |
@@ -124,8 +115,8 @@ jobs:
           test -s data/model_results/a3_pregame_pool_report.json
           test -s data/model_results/a3_opportunity_validation.json
           test -s data/model_results/a3_opportunity_predictions.csv
-
-      # SAVE ALL DATA AND RESULTS
+          test -s data/model_results/a3_matchup_breakout_validation.json
+          test -s data/model_results/a3_matchup_breakout_predictions.csv
 
       - name: Upload A3 datasets and model results
         uses: actions/upload-artifact@v4
