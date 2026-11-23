@@ -50,6 +50,38 @@ jobs:
               )
           PY
 
+      - name: Download 2025 participation data
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import requests
+          import pandas as pd
+
+          url = (
+              "https://github.com/nflverse/nflverse-data/"
+              "releases/download/pbp_participation/"
+              "pbp_participation_2025.parquet"
+          )
+
+          response = requests.get(url, timeout=180)
+          response.raise_for_status()
+
+          parquet_path = Path(
+              "data/pbp_participation_2025.parquet"
+          )
+          parquet_path.write_bytes(response.content)
+
+          df = pd.read_parquet(parquet_path)
+
+          output = Path(
+              "data/pbp_participation_2025.csv"
+          )
+          df.to_csv(output, index=False)
+
+          print(f"Participation rows: {len(df):,}")
+          print(f"CSV created: {output}")
+          PY
+
       - name: Build A3 defensive matchup features
         run: python scripts/build_features.py
 
@@ -67,6 +99,9 @@ jobs:
 
       - name: Build Phase 4.7A pregame player pool
         run: python scripts/build_pregame_player_pool.py
+
+      - name: Build Phase 4.8A coverage intelligence
+        run: python scripts/build_coverage_intelligence.py
 
       - name: Train and backtest A3 prediction models
         run: python scripts/train_a3.py
@@ -101,6 +136,7 @@ jobs:
           test -s data/processed/defense_vulnerability_game_features.csv
           test -s data/processed/player_vulnerability_matchup_features.csv
           test -s data/processed/pregame_player_pool.csv
+          test -s data/processed/defense_coverage_pregame_2025.csv
 
           test -s data/model_results/a3_backtest_report.json
           test -s data/model_results/a3_backtest_predictions.csv
@@ -117,6 +153,7 @@ jobs:
           test -s data/model_results/a3_opportunity_predictions.csv
           test -s data/model_results/a3_matchup_breakout_validation.json
           test -s data/model_results/a3_matchup_breakout_predictions.csv
+          test -s data/model_results/a3_coverage_audit_2025.json
 
       - name: Upload A3 datasets and model results
         uses: actions/upload-artifact@v4
