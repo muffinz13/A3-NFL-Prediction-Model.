@@ -15,10 +15,6 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # ======================================
-      # SETUP
-      # ======================================
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -32,10 +28,6 @@ jobs:
           pip install "pandas>=2.2,<3" "pyarrow>=17,<24" requests
           pip install "scikit-learn>=1.5,<2" numpy
 
-      # ======================================
-      # DOWNLOAD NFL DATA
-      # ======================================
-
       - name: Download NFL play-by-play data
         run: |
           mkdir -p data
@@ -48,31 +40,15 @@ jobs:
                   "https://github.com/nflverse/nflverse-data/"
                   f"releases/download/pbp/play_by_play_{year}.parquet"
               )
-
-              response = requests.get(
-                  url,
-                  timeout=180
-              )
-
+              response = requests.get(url, timeout=180)
               response.raise_for_status()
-
-              output = Path(
-                  f"data/play_by_play_{year}.parquet"
-              )
-
-              output.write_bytes(
-                  response.content
-              )
-
+              output = Path(f"data/play_by_play_{year}.parquet")
+              output.write_bytes(response.content)
               print(
                   f"Downloaded {year}: "
                   f"{output.stat().st_size:,} bytes"
               )
           PY
-
-      # ======================================
-      # BUILD A3 PLAYER AND DEFENSE FEATURES
-      # ======================================
 
       - name: Build A3 defensive matchup features
         run: python scripts/build_features.py
@@ -83,61 +59,29 @@ jobs:
       - name: Build A3 matchup intelligence features
         run: python scripts/build_matchup_features.py
 
-      # ======================================
-      # PHASE 4.2
-      # POSITION-SPECIFIC DEFENSE
-      # ======================================
-
       - name: Build position-specific defensive features
         run: python scripts/build_position_matchups.py
-
-      # ======================================
-      # PHASE 4.4
-      # DEFENSIVE VULNERABILITIES
-      # ======================================
 
       - name: Build defensive vulnerability profiles
         run: python scripts/build_vulnerability_features.py
 
-      # ======================================
-      # TRAIN BASELINE A3 MODELS
-      # ======================================
+      - name: Build Phase 4.7A pregame player pool
+        run: python scripts/build_pregame_player_pool.py
 
       - name: Train and backtest A3 prediction models
         run: python scripts/train_a3.py
 
-      # ======================================
-      # DEFENSIVE MATCHUP VALIDATION
-      # ======================================
-
       - name: Validate defensive matchup value
         run: python scripts/validate_matchups.py
-
-      # ======================================
-      # PHASE 4.3 VALIDATION
-      # ======================================
 
       - name: Validate position-specific matchup value
         run: python scripts/validate_position_matchups.py
 
-      # ======================================
-      # PHASE 4.5 VALIDATION
-      # ======================================
-
       - name: Validate Phase 4.4 vulnerabilities
         run: python scripts/validate_vulnerabilities.py
 
-      # ======================================
-      # PHASE 4.6
-      # SELECT DEFENSIVE FEATURES BY POSITION
-      # ======================================
-
       - name: Validate Phase 4.6 feature selection
         run: python scripts/validate_feature_selection.py
-
-      # ======================================
-      # VERIFY ALL OUTPUT FILES
-      # ======================================
 
       - name: Verify A3 outputs
         run: |
@@ -150,25 +94,19 @@ jobs:
           test -s data/processed/player_position_matchup_features.csv
           test -s data/processed/defense_vulnerability_game_features.csv
           test -s data/processed/player_vulnerability_matchup_features.csv
+          test -s data/processed/pregame_player_pool.csv
 
           test -s data/model_results/a3_backtest_report.json
           test -s data/model_results/a3_backtest_predictions.csv
-
           test -s data/model_results/a3_matchup_validation.json
           test -s data/model_results/a3_matchup_validation_predictions.csv
-
           test -s data/model_results/a3_position_validation.json
           test -s data/model_results/a3_position_validation_predictions.csv
-
           test -s data/model_results/a3_vulnerability_validation.json
           test -s data/model_results/a3_vulnerability_validation_predictions.csv
-
           test -s data/model_results/a3_feature_selection_validation.json
           test -s data/model_results/a3_feature_selection_predictions.csv
-
-      # ======================================
-      # UPLOAD DATASETS AND MODEL RESULTS
-      # ======================================
+          test -s data/model_results/a3_pregame_pool_report.json
 
       - name: Upload A3 datasets and model results
         uses: actions/upload-artifact@v4
