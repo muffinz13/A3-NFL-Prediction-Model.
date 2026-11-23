@@ -59,6 +59,9 @@ jobs:
       - name: Build position-specific defensive features
         run: python scripts/build_position_matchups.py
 
+      - name: Build defensive vulnerability profiles
+        run: python scripts/build_vulnerability_features.py
+
       - name: Train and backtest A3 prediction models
         run: python scripts/train_a3.py
 
@@ -77,6 +80,8 @@ jobs:
           test -s data/processed/player_matchup_features.csv
           test -s data/processed/defense_position_game_features.csv
           test -s data/processed/player_position_matchup_features.csv
+          test -s data/processed/defense_vulnerability_game_features.csv
+          test -s data/processed/player_vulnerability_matchup_features.csv
           test -s data/model_results/a3_backtest_report.json
           test -s data/model_results/a3_backtest_predictions.csv
           test -s data/model_results/a3_matchup_validation.json
