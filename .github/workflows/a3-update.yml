@@ -23,7 +23,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install requests
+        run: pip install "pandas>=2.2,<3" "pyarrow>=17,<24" requests
 
       - name: Download NFL play-by-play data
         run: |
@@ -44,10 +44,20 @@ jobs:
               print(f"Downloaded {year}: {output.stat().st_size:,} bytes")
           PY
 
-      - name: Upload NFL datasets
+      - name: Build A3 defensive matchup features
+        run: python scripts/build_features.py
+
+      - name: Verify defensive feature outputs
+        run: |
+          test -s data/processed/defense_game_features.csv
+          test -s data/processed/defense_pregame_features.csv
+
+      - name: Upload A3 NFL datasets and features
         uses: actions/upload-artifact@v4
         with:
-          name: a3-nfl-play-by-play
-          path: data/*.parquet
+          name: a3-nfl-data-and-features
+          path: |
+            data/*.parquet
+            data/processed/*.csv
           retention-days: 7
           if-no-files-found: error
