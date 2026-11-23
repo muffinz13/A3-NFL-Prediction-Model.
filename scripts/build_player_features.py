@@ -119,4 +119,3 @@ def build():
     print(f"Metrics available: {available}")
 
 if __name__ == "__main__":
-    build()
