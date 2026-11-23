@@ -71,6 +71,9 @@ jobs:
       - name: Validate position-specific matchup value
         run: python scripts/validate_position_matchups.py
 
+      - name: Validate Phase 4.4 vulnerabilities
+        run: python scripts/validate_vulnerabilities.py
+
       - name: Verify A3 outputs
         run: |
           test -s data/processed/defense_game_features.csv
@@ -88,6 +91,8 @@ jobs:
           test -s data/model_results/a3_matchup_validation_predictions.csv
           test -s data/model_results/a3_position_validation.json
           test -s data/model_results/a3_position_validation_predictions.csv
+          test -s data/model_results/a3_vulnerability_validation.json
+          test -s data/model_results/a3_vulnerability_validation_predictions.csv
 
       - name: Upload A3 datasets and model results
         uses: actions/upload-artifact@v4
