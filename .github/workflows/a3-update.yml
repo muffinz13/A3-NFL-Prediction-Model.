@@ -51,12 +51,16 @@ jobs:
       - name: Build A3 player performance features
         run: python scripts/build_player_features.py
 
+      - name: Build A3 matchup intelligence features
+        run: python scripts/build_matchup_features.py
+
       - name: Verify A3 feature outputs
         run: |
           test -s data/processed/defense_game_features.csv
           test -s data/processed/defense_pregame_features.csv
           test -s data/processed/player_game_stats.csv
           test -s data/processed/player_pregame_features.csv
+          test -s data/processed/player_matchup_features.csv
 
       - name: Upload A3 NFL datasets and features
         uses: actions/upload-artifact@v4
