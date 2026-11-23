@@ -1,2 +1,58 @@
-# A3-NFL-Prediction-Model.
-Sports
+name: A3 NFL Data Update
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 13 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  update-nfl-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install "pandas>=2.2,<3" "pyarrow>=17,<24" requests
+
+      - name: Download NFL play-by-play data
+        run: |
+          mkdir -p data
+          python - <<'PY'
+          import requests
+          from pathlib import Path
+
+          for year in [2024, 2025, 2026]:
+              url = (
+                  "https://github.com/nflverse/nflverse-data/"
+                  f"releases/download/pbp/play_by_play_{year}.parquet"
+              )
+              response = requests.get(url, timeout=180)
+              response.raise_for_status()
+              output = Path(f"data/play_by_play_{year}.parquet")
+              output.write_bytes(response.content)
+              print(f"Downloaded {year}: {output.stat().st_size:,} bytes")
+          PY
+
+      - name: Build A3 defensive matchup features
+        run: python scripts/build_features.py
+
+      - name: Upload A3 NFL datasets and features
+        uses: actions/upload-artifact@v4
+        with:
+          name: a3-nfl-data-and-features
+          path: |
+            data/*.parquet
+            data/processed/*.csv
+          retention-days: 7
+          if-no-files-found: error
