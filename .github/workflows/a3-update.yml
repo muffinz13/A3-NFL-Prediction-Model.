@@ -24,7 +24,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install "pandas>=2.2,<3" "pyarrow>=17,<24" requests
+        run: |
+          pip install "pandas>=2.2,<3" "pyarrow>=17,<24" requests
+          pip install "scikit-learn>=1.5,<2" numpy
 
       - name: Download NFL play-by-play data
         run: |
@@ -54,20 +56,27 @@ jobs:
       - name: Build A3 matchup intelligence features
         run: python scripts/build_matchup_features.py
 
-      - name: Verify A3 feature outputs
+      - name: Train and backtest A3 prediction models
+        run: python scripts/train_a3.py
+
+      - name: Verify A3 outputs
         run: |
           test -s data/processed/defense_game_features.csv
           test -s data/processed/defense_pregame_features.csv
           test -s data/processed/player_game_stats.csv
           test -s data/processed/player_pregame_features.csv
           test -s data/processed/player_matchup_features.csv
+          test -s data/model_results/a3_backtest_report.json
+          test -s data/model_results/a3_backtest_predictions.csv
 
-      - name: Upload A3 NFL datasets and features
+      - name: Upload A3 datasets and model results
         uses: actions/upload-artifact@v4
         with:
-          name: a3-nfl-data-and-features
+          name: a3-nfl-data-and-model-results
           path: |
             data/*.parquet
             data/processed/*.csv
+            data/model_results/*.json
+            data/model_results/*.csv
           retention-days: 7
           if-no-files-found: error
