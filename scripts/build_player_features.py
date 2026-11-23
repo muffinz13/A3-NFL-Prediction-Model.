@@ -1,121 +1,287 @@
+
 from pathlib import Path
 import pandas as pd
 
+# A3 PHASE 2 — PLAYER PERFORMANCE FEATURES
+# Uses existing NFL play-by-play Parquet files.
+
 SEASONS = [2024, 2025, 2026]
-OUT = Path("data/processed")
-OUT.mkdir(parents=True, exist_ok=True)
+DATA_DIR = Path("data")
+OUT_DIR = DATA_DIR / "processed"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-BASE = (
-    "https://github.com/nflverse/nflverse-data/"
-    "releases/download/player_stats/"
-    "player_stats_{year}.csv"
-)
+METRICS = [
+    "pass_attempts",
+    "completions",
+    "pass_yards",
+    "pass_tds",
+    "interceptions",
+    "carries",
+    "rush_yards",
+    "rush_tds",
+    "targets",
+    "receptions",
+    "rec_yards",
+    "rec_tds",
+]
 
-METRICS = {
-    "passing_yards": "pass_yards",
-    "passing_tds": "pass_tds",
-    "interceptions": "interceptions",
-    "rushing_yards": "rush_yards",
-    "carries": "carries",
-    "rushing_tds": "rush_tds",
-    "receptions": "receptions",
-    "targets": "targets",
-    "receiving_yards": "rec_yards",
-    "receiving_tds": "rec_tds",
+ROLE_CONFIG = {
+    "passer": {
+        "id": "passer_player_id",
+        "name": "passer_player_name",
+    },
+    "rusher": {
+        "id": "rusher_player_id",
+        "name": "rusher_player_name",
+    },
+    "receiver": {
+        "id": "receiver_player_id",
+        "name": "receiver_player_name",
+    },
 }
 
-def load_data():
-    frames = []
+REQUIRED = [
+    "season",
+    "week",
+    "game_id",
+    "season_type",
+    "posteam",
+    "play_type",
+    "pass_attempt",
+    "complete_pass",
+    "passing_yards",
+    "pass_touchdown",
+    "interception",
+    "rush_attempt",
+    "rushing_yards",
+    "rush_touchdown",
+    "receiving_yards",
+    "touchdown",
+    "passer_player_id",
+    "rusher_player_id",
+    "receiver_player_id",
+]
 
-    for year in SEASONS:
-        url = BASE.format(year=year)
-        print(f"Downloading player stats: {year}")
-        df = pd.read_csv(url)
-        df["season"] = year
-        frames.append(df)
+def numeric(df, column):
+    if column not in df.columns:
+        raise ValueError(f"Required column missing: {column}")
 
-    return pd.concat(frames, ignore_index=True)
+    return pd.to_numeric(
+        df[column], errors="coerce"
+    )
 
-def build():
-    df = load_data()
-
-    required = [
-        "player_id", "player_name", "position",
-        "team", "season", "week"
-    ]
-
-    missing = set(required) - set(df.columns)
+def prepare(df):
+    missing = sorted(set(REQUIRED) - set(df.columns))
     if missing:
+        raise ValueError(f"Missing PBP columns: {missing}")
+
+    df = df[
+        (df["season_type"] == "REG")
+        & df["posteam"].notna()
+        & df["play_type"].isin(["run", "pass"])
+    ].copy()
+
+    # Exclude plays nullified by penalties and two-point tries.
+    if "no_play" in df.columns:
+        df = df[numeric(df, "no_play").fillna(0) == 0]
+
+    if "two_point_attempt" in df.columns:
+        df = df[
+            numeric(df, "two_point_attempt").fillna(0) == 0
+        ]
+
+    for column in [
+        "pass_attempt", "complete_pass",
+        "passing_yards", "pass_touchdown",
+        "interception", "rush_attempt",
+        "rushing_yards", "rush_touchdown",
+        "receiving_yards", "touchdown",
+    ]:
+        df[column] = numeric(df, column)
+
+    # A missing flag is treated as false, but missing
+    # yardage on a qualifying play remains missing.
+    flags = [
+        "pass_attempt", "complete_pass",
+        "pass_touchdown", "interception",
+        "rush_attempt", "rush_touchdown",
+        "touchdown",
+    ]
+    df[flags] = df[flags].fillna(0)
+
+    return df
+
+def build_role(df, role):
+    cfg = ROLE_CONFIG[role]
+    player_id = cfg["id"]
+    player_name = cfg["name"]
+
+    if player_name not in df.columns:
         raise ValueError(
-            f"Missing required columns: {sorted(missing)}"
+            f"Missing player-name column: {player_name}"
         )
 
-    df = df[df["position"].isin(
-        ["QB", "RB", "WR", "TE"]
-    )].copy()
+    part = df[df[player_id].notna()].copy()
 
-    if "season_type" in df.columns:
-        df = df[df["season_type"] == "REG"].copy()
+    part["player_id"] = part[player_id].astype(str)
+    part["player_name"] = part[player_name]
+    part["team"] = part["posteam"]
+    part["role"] = role
 
-    df["week"] = pd.to_numeric(
-        df["week"], errors="coerce"
+    for metric in METRICS:
+        part[metric] = 0.0
+
+    if role == "passer":
+        part["pass_attempts"] = part["pass_attempt"]
+        part["completions"] = part["complete_pass"]
+        part["pass_yards"] = part["passing_yards"]
+        part["pass_tds"] = part["pass_touchdown"]
+        part["interceptions"] = part["interception"]
+
+    elif role == "rusher":
+        part["carries"] = part["rush_attempt"]
+        part["rush_yards"] = part["rushing_yards"]
+        part["rush_tds"] = part["rush_touchdown"]
+
+    elif role == "receiver":
+        # A receiver target requires a pass attempt
+        # with a known intended receiver.
+        part["targets"] = part["pass_attempt"]
+        part["receptions"] = part["complete_pass"]
+        part["rec_yards"] = part["receiving_yards"]
+
+        # Receiving touchdowns on completed passes.
+        part["rec_tds"] = (
+            (part["complete_pass"] == 1)
+            & (part["touchdown"] == 1)
+        ).astype(float)
+
+    keys = [
+        "season", "week", "game_id",
+        "player_id", "team", "role"
+    ]
+
+    result = (
+        part.groupby(keys, as_index=False)
+        .agg(
+            player_name=("player_name", "first"),
+            **{m: (m, "sum") for m in METRICS}
+        )
     )
-    df = df.dropna(subset=["week"])
-    df["week"] = df["week"].astype(int)
 
-    available = {}
+    return result
 
-    for source, target in METRICS.items():
-        if source in df.columns:
-            df[target] = pd.to_numeric(
-                df[source], errors="coerce"
-            ).fillna(0)
-            available[target] = source
-        else:
-            df[target] = 0
-            print(f"WARNING: {source} unavailable")
+def build():
+    all_roles = []
 
-    df = df.sort_values(
-        ["player_id", "season", "week"]
+    for season in SEASONS:
+        path = DATA_DIR / f"play_by_play_{season}.parquet"
+
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Missing {path}. Run the A3 download workflow."
+            )
+
+        print(f"Processing season {season}")
+        df = prepare(pd.read_parquet(path))
+
+        for role in ROLE_CONFIG:
+            all_roles.append(build_role(df, role))
+
+    role_games = pd.concat(
+        all_roles, ignore_index=True
+    )
+
+    # Combine roles for players who both rush and receive,
+    # or quarterbacks who both pass and rush.
+    keys = [
+        "season", "week", "game_id",
+        "player_id", "team"
+    ]
+
+    games = (
+        role_games.groupby(keys, as_index=False)
+        .agg(
+            player_name=("player_name", "first"),
+            roles=("role", lambda x: ",".join(sorted(set(x)))),
+            **{m: (m, "sum") for m in METRICS}
+        )
+    )
+
+    games = games.sort_values(
+        ["season", "week", "game_id", "player_id"]
     ).reset_index(drop=True)
 
-    grouped = df.groupby(
+    games.to_csv(
+        OUT_DIR / "player_game_stats.csv",
+        index=False
+    )
+
+    # Calculate strictly pregame historical features.
+    # First game of a season has no season history.
+    # Last-five uses the previous five appearances.
+    features = games.copy()
+
+    features = features.sort_values(
+        ["player_id", "season", "week", "game_id"]
+    ).reset_index(drop=True)
+
+    group = features.groupby(
         ["player_id", "season"], sort=False
     )
 
-    for metric in METRICS.values():
-        df[f"season_prior_{metric}"] = (
-            grouped[metric].transform(
+    features["prior_games"] = group.cumcount()
+
+    for metric in METRICS:
+        features[f"season_prior_{metric}"] = (
+            group[metric].transform(
                 lambda s: s.shift(1).expanding(
                     min_periods=1
                 ).mean()
             )
         )
 
-        df[f"last5_{metric}"] = (
-            grouped[metric].transform(
+        features[f"last5_{metric}"] = (
+            group[metric].transform(
                 lambda s: s.shift(1).rolling(
-                    5, min_periods=2
+                    window=5,
+                    min_periods=2
                 ).mean()
             )
         )
 
-    for metric in [
-        "pass_yards", "rush_yards",
-        "rec_yards", "receptions", "targets"
-    ]:
-        df[f"last5_vs_season_{metric}"] = (
-            df[f"last5_{metric}"]
-            - df[f"season_prior_{metric}"]
+        features[f"last5_vs_season_{metric}"] = (
+            features[f"last5_{metric}"]
+            - features[f"season_prior_{metric}"]
         )
 
-    df.to_csv(
-        OUT / "player_pregame_features.csv",
+    features.to_csv(
+        OUT_DIR / "player_pregame_features.csv",
         index=False
     )
 
-    print("Player features generated successfully.")
-    print(f"Rows: {len(df)}")
-    print(f"Metrics available: {available}")
+    # Sanity checks.
+    if games.empty:
+        raise ValueError("No player games generated")
+
+    if games.duplicated(keys).any():
+        raise ValueError("Duplicate player-game rows")
+
+    first_games = features["prior_games"] == 0
+    for metric in METRICS:
+        if features.loc[
+            first_games, f"season_prior_{metric}"
+        ].notna().any():
+            raise ValueError(
+                f"Future-data leakage detected: {metric}"
+            )
+
+    print("A3 player features generated successfully")
+    print(f"Player-game rows: {len(games):,}")
+    print(f"Pregame feature rows: {len(features):,}")
+    print("Outputs:")
+    print("  data/processed/player_game_stats.csv")
+    print("  data/processed/player_pregame_features.csv")
 
 if __name__ == "__main__":
+    build()
